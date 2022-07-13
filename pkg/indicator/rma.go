@@ -13,15 +13,9 @@ import (
 type RMA struct {
 	types.SeriesBase
 	types.IntervalWindow
-
-	Values  types.Float64Slice
-	EndTime time.Time
-
-	counter int
-	Adjust  bool
-	tmp     float64
-	sum     float64
-
+	Values          types.Float64Slice
+	Adjust          bool
+	EndTime         time.Time
 	updateCallbacks []func(value float64)
 }
 
@@ -40,27 +34,16 @@ func (inc *RMA) Clone() types.UpdatableSeriesExtend {
 }
 
 func (inc *RMA) Update(x float64) {
-	lambda := 1 / float64(inc.Window)
-	if inc.counter == 0 {
-		inc.SeriesBase.Series = inc
-		inc.sum = 1
-		inc.tmp = x
+	alpha := 1 / float64(inc.Window)
+
+	if len(inc.Values) == 0 {
+		sma := &SMA{IntervalWindow: inc.IntervalWindow}
+		sma.Update(x)
+
+		inc.Values.Push(sma.Last())
 	} else {
-		if inc.Adjust {
-			inc.sum = inc.sum*(1-lambda) + 1
-			inc.tmp = inc.tmp + (x-inc.tmp)/inc.sum
-		} else {
-			inc.tmp = inc.tmp*(1-lambda) + x*lambda
-		}
+		inc.Values.Push(alpha*x + (1-alpha)*inc.Values.Last())
 	}
-	inc.counter++
-
-	if inc.counter < inc.Window {
-		inc.Values.Push(0)
-		return
-	}
-
-	inc.Values.Push(inc.tmp)
 }
 
 func (inc *RMA) Last() float64 {

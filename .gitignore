@@ -51,3 +51,9 @@ testoutput
 
 coverage.txt
 coverage_dum.txt
+cmd/bbgo/.env.local
+cmd/bbgo-webview/.env.local
+
+vendor/
+
+cmd/bbgo/bbgo

@@ -17,46 +17,34 @@ type RSI struct {
 	types.SeriesBase
 	types.IntervalWindow
 	Values          types.Float64Slice
-	Prices          types.Float64Slice
-	PreviousAvgLoss float64
-	PreviousAvgGain float64
-
+	uRMA            *RMA
+	dRMA            *RMA
+	prevPrice       float64
 	EndTime         time.Time
 	updateCallbacks []func(value float64)
 }
 
 func (inc *RSI) Update(price float64) {
-	if len(inc.Prices) == 0 {
+	if inc.uRMA == nil {
 		inc.SeriesBase.Series = inc
+		inc.uRMA = &RMA{IntervalWindow: inc.IntervalWindow}
+		inc.dRMA = &RMA{IntervalWindow: inc.IntervalWindow}
 	}
-	inc.Prices.Push(price)
 
-	if len(inc.Prices) < inc.Window+1 {
+	if inc.prevPrice == 0 {
+		inc.prevPrice = price
 		return
 	}
 
-	var avgGain float64
-	var avgLoss float64
-	if len(inc.Prices) == inc.Window+1 {
-		priceDifferences := inc.Prices.Diff()
+	inc.uRMA.Update(math.Max(price-inc.prevPrice, 0))
+	inc.dRMA.Update(math.Max(inc.prevPrice-price, 0))
 
-		avgGain = priceDifferences.PositiveValuesOrZero().Abs().Sum() / float64(inc.Window)
-		avgLoss = priceDifferences.NegativeValuesOrZero().Abs().Sum() / float64(inc.Window)
-	} else {
-		difference := price - inc.Prices[len(inc.Prices)-2]
-		currentGain := math.Max(difference, 0)
-		currentLoss := -math.Min(difference, 0)
-
-		avgGain = (inc.PreviousAvgGain*13 + currentGain) / float64(inc.Window)
-		avgLoss = (inc.PreviousAvgLoss*13 + currentLoss) / float64(inc.Window)
-	}
-
-	rs := avgGain / avgLoss
+	rs := inc.uRMA.Last() / inc.dRMA.Last()
 	rsi := 100 - (100 / (1 + rs))
+
 	inc.Values.Push(rsi)
 
-	inc.PreviousAvgGain = avgGain
-	inc.PreviousAvgLoss = avgLoss
+	inc.prevPrice = price
 }
 
 func (inc *RSI) Last() float64 {

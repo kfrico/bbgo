@@ -2,6 +2,7 @@ package strategy
 
 // import built-in strategies
 import (
+	_ "github.com/c9s/bbgo/pkg/strategy/adxstochrsi"
 	_ "github.com/c9s/bbgo/pkg/strategy/autoborrow"
 	_ "github.com/c9s/bbgo/pkg/strategy/bollgrid"
 	_ "github.com/c9s/bbgo/pkg/strategy/bollmaker"
