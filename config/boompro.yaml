@@ -1,0 +1,69 @@
+---
+persistence:
+  redis:
+    host: redis
+    port: 6379
+    db: 0
+
+sessions:
+  binance:
+    exchange: binance
+    futures: true
+    envVarPrefix: BINANCE
+
+exchangeStrategies:
+- on: binance
+  boompro:
+    symbol: MATICUSDT
+    interval: 1m
+    amount: 1000
+
+    takeProfit: 10%
+    stopLoss: 5%
+
+    useAtrStopLoss: false
+    useAtrTakeProfit: false
+    atrWindow: 14
+    volatilityLength: 100
+
+    stops:
+    # use trailing stop order
+    - trailingStop:
+        # callbackRate: when the price reaches -1% from the previous highest, we trigger the stop
+        callbackRate: 3%
+
+        # closePosition is how much position do you want to close
+        closePosition: 100%
+
+        # minProfit is how much profit you want to take.
+        # if you set this option, your stop will only be triggered above the average cost.
+        minProfit: 5%
+
+        # interval is the time interval for checking your stop
+        interval: 1m
+
+        # virtual means we don't place a a REAL stop order
+        # when virtual is on
+        # the strategy won't place a REAL stop order, instead if watches the close price,
+        # and if the condition matches, it submits a market order to close your position.
+        virtual: true
+sync:
+  userDataStream:
+    trades: true
+    filledOrders: true
+  sessions:
+    - binance
+  symbols:
+    - MATICUSDT
+
+backtest:
+  startTime: "2022-06-01"
+  endTime: "2022-07-14"
+  symbols:
+    - MATICUSDT
+  sessions: [binance]
+  accounts:
+    binance:
+      balances:
+        MATIC: 10000
+        USDT: 20000.0
