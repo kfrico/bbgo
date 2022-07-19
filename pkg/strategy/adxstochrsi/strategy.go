@@ -22,6 +22,9 @@ func init() {
 type Strategy struct {
 	*bbgo.Notifiability
 	*bbgo.Environment
+
+	bbgo.SmartStops
+
 	orderExecutor *bbgo.GeneralOrderExecutor
 
 	bbgo.QuantityOrAmount // 單次購買數量或是金額
@@ -57,7 +60,10 @@ type Strategy struct {
 	dmi      *indicator.DMI
 	stochrsi *indicator.STOCHRSI
 	adx      *indicator.ADX
-	atr      *indicator.ATR
+}
+
+func (s *Strategy) Initialize() error {
+	return s.SmartStops.InitializeStopControllers(s.Symbol)
 }
 
 func (s *Strategy) ID() string {
@@ -72,6 +78,8 @@ func (s *Strategy) Subscribe(session *bbgo.ExchangeSession) {
 	session.Subscribe(types.KLineChannel, s.Symbol, types.SubscribeOptions{Interval: types.Interval1m})
 	session.Subscribe(types.KLineChannel, s.Symbol, types.SubscribeOptions{Interval: s.Interval})
 	session.Subscribe(types.KLineChannel, s.Symbol, types.SubscribeOptions{Interval: s.EwmaInterval})
+
+	s.SmartStops.Subscribe(session)
 }
 
 func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, session *bbgo.ExchangeSession) error {
@@ -105,6 +113,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		bbgo.Sync(s)
 	})
 
+	s.SmartStops.RunStopControllers(ctx, session, s.orderExecutor.TradeCollector())
+
 	s.ewma = &indicator.EWMA{IntervalWindow: types.IntervalWindow{Interval: s.EwmaInterval, Window: s.EwmaWindow}}
 
 	s.dmi = &indicator.DMI{
@@ -115,14 +125,6 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 	s.adx = indicator.NewAdx(types.IntervalWindow{Interval: s.Interval, Window: s.AdxWindow})
 
 	s.stochrsi = indicator.NewStochrsi(s.StochrsiKWindow, s.StochrsiDWindow, s.StochrsiRsiWindow, s.StochrsiStochWindow, s.Interval)
-
-	// Initialize a custom indicator
-	s.atr = &indicator.ATR{
-		IntervalWindow: types.IntervalWindow{
-			Interval: s.Interval,
-			Window:   s.AtrWindow,
-		},
-	}
 
 	st, ok := session.MarketDataStore(s.Symbol)
 
@@ -138,17 +140,16 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 	// 初始化數據 指標
 	for _, k := range *klines {
-		s.dmi.Update(k.High.Float64(), k.Low.Float64(), k.Close.Float64())
-		s.adx.Update(k.High.Float64(), k.Low.Float64(), k.Close.Float64())
-		s.stochrsi.Update(k.Close.Float64())
-		s.atr.Update(k.High.Float64(), k.Low.Float64(), k.Close.Float64())
+		s.dmi.PushK(k)
+		s.adx.PushK(k)
+		s.stochrsi.PushK(k)
 	}
 
 	Ewmaklines, ok := st.KLinesOfInterval(s.EwmaInterval)
 
 	// 初始化ewma數據 指標 (時間不一樣)
 	for _, k := range *Ewmaklines {
-		s.ewma.Update(k.Close.Float64())
+		s.ewma.PushK(k)
 	}
 
 	// 綁定st，在初始化之後
@@ -156,12 +157,6 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 	s.dmi.Bind(st)
 	s.adx.Bind(st)
 	s.stochrsi.Bind(st)
-	s.atr.Bind(st)
-
-	var sellTakeProfitPrice fixedpoint.Value // 做空停利價
-	var sellStopLossPrice fixedpoint.Value   // 做空停損價
-	var buyTakeProfitPrice fixedpoint.Value  // 做多停利價
-	var buyStopLossPrice fixedpoint.Value    // 做多停損價
 
 	longSignal := types.CrossOver(s.stochrsi.GetK(), s.stochrsi.GetD())
 	shortSignal := types.CrossUnder(s.stochrsi.GetK(), s.stochrsi.GetD())
@@ -176,10 +171,11 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 			isShortPosition := s.Position.IsShort()
 
 			if isLongPosition {
-				if k.Close.Float64() > buyTakeProfitPrice.Float64() {
+
+				if k.Close.Float64() > s.Position.AverageCost.Mul(fixedpoint.One.Add(s.TakeProfit)).Float64() {
 					log.Infof("做多止盈 數量: %v 止盈價格: %v",
 						s.Position.GetQuantity(),
-						buyTakeProfitPrice,
+						k.Close.Float64(),
 					)
 					log.Infof("%v", k)
 
@@ -195,10 +191,10 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 					_, _ = s.orderExecutor.SubmitOrders(ctx, sellOrder)
 				}
 
-				if k.Close.Float64() < buyStopLossPrice.Float64() {
+				if k.Close.Float64() < s.Position.AverageCost.Mul(fixedpoint.One.Sub(s.StopLoss)).Float64() {
 					log.Infof("做多止損 數量: %v 止損價格: %v",
 						s.Position.GetQuantity(),
-						buyStopLossPrice,
+						k.Close.Float64(),
 					)
 					log.Infof("%v", k)
 
@@ -216,10 +212,10 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 			}
 
 			if isShortPosition {
-				if k.Close.Float64() < sellTakeProfitPrice.Float64() {
+				if k.Close.Float64() < s.Position.AverageCost.Mul(fixedpoint.One.Sub(s.TakeProfit)).Float64() {
 					log.Infof("做空止盈 數量: %v 止盈價格: %v",
 						s.Position.GetQuantity(),
-						sellTakeProfitPrice,
+						k.Close.Float64(),
 					)
 					log.Infof("%v", k)
 
@@ -235,10 +231,10 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 					_, _ = s.orderExecutor.SubmitOrders(ctx, buyOrder)
 				}
 
-				if k.Close.Float64() > sellStopLossPrice.Float64() {
+				if k.Close.Float64() > s.Position.AverageCost.Mul(fixedpoint.One.Add(s.StopLoss)).Float64() {
 					log.Infof("做空止損 數量: %v 止損價格: %v",
 						s.Position.GetQuantity(),
-						sellStopLossPrice,
+						k.Close.Float64(),
 					)
 					log.Infof("%v", k)
 
@@ -278,17 +274,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 					srd := s.stochrsi.LastD()
 
 					if srk < 30 && srd < 25 && longSignal.Last() {
-						buyTakeProfitPrice = k.Close.Mul(fixedpoint.One.Add(s.TakeProfit)) // 止盈價格
-						buyStopLossPrice = k.Close.Mul(fixedpoint.One.Sub(s.StopLoss))
-
-						if s.UseAtrTakeProfit {
-							buyTakeProfitPrice = k.Close.Add(fixedpoint.NewFromFloat(s.atr.Last() * 1.5)) // 止盈價格
-						}
-
-						if s.UseAtrStopLoss {
-							buyStopLossPrice = k.Close.Sub(fixedpoint.NewFromFloat(s.atr.Last() * 1.5))
-						}
-
+						buyTakeProfitPrice := k.Close.Mul(fixedpoint.One.Add(s.TakeProfit)) // 止盈價格
+						buyStopLossPrice := k.Close.Mul(fixedpoint.One.Sub(s.StopLoss))
 						buyQuantity := s.QuantityOrAmount.CalculateQuantity(k.Close)
 
 						buyOrder := types.SubmitOrder{
@@ -317,17 +304,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 					srd := s.stochrsi.LastD()
 
 					if srk > 70 && srd > 75 && shortSignal.Last() {
-						sellTakeProfitPrice = k.Close.Mul(fixedpoint.One.Sub(s.TakeProfit)) // 止盈價格
-						sellStopLossPrice = k.Close.Mul(fixedpoint.One.Add(s.StopLoss))
-
-						if s.UseAtrTakeProfit {
-							sellTakeProfitPrice = k.Close.Sub(fixedpoint.NewFromFloat(s.atr.Last() * 1.5)) // 止盈價格
-						}
-
-						if s.UseAtrStopLoss {
-							sellStopLossPrice = k.Close.Add(fixedpoint.NewFromFloat(s.atr.Last() * 1.5))
-						}
-
+						sellTakeProfitPrice := k.Close.Mul(fixedpoint.One.Sub(s.TakeProfit)) // 止盈價格
+						sellStopLossPrice := k.Close.Mul(fixedpoint.One.Add(s.StopLoss))
 						sellQuantity := s.QuantityOrAmount.CalculateQuantity(k.Close)
 
 						sellOrder := types.SubmitOrder{
