@@ -2,6 +2,7 @@ package adxstochrsi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/c9s/bbgo/pkg/bbgo"
@@ -80,6 +81,22 @@ func (s *Strategy) Subscribe(session *bbgo.ExchangeSession) {
 	session.Subscribe(types.KLineChannel, s.Symbol, types.SubscribeOptions{Interval: s.EwmaInterval})
 
 	s.SmartStops.Subscribe(session)
+}
+
+func (s *Strategy) Validate() error {
+	if len(s.Symbol) == 0 {
+		return errors.New("symbol is required")
+	}
+
+	return nil
+}
+
+func (s *Strategy) CurrentPosition() *types.Position {
+	return s.Position
+}
+
+func (s *Strategy) ClosePosition(ctx context.Context, percentage fixedpoint.Value) error {
+	return s.orderExecutor.ClosePosition(ctx, percentage)
 }
 
 func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, session *bbgo.ExchangeSession) error {
