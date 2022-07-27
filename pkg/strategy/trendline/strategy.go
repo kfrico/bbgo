@@ -108,7 +108,7 @@ func (s *Strategy) ClosePosition(ctx context.Context, percentage fixedpoint.Valu
 }
 
 func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, session *bbgo.ExchangeSession) error {
-	log.Infof("%+v", s)
+	fmt.Printf("%+v \n", s)
 
 	if s.Position == nil {
 		s.Position = types.NewPositionFromMarket(s.Market)
@@ -186,6 +186,9 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 	// longSignal := types.CrossOver(s.stochrsi.GetK(), s.stochrsi.GetD())
 	// shortSignal := types.CrossUnder(s.stochrsi.GetK(), s.stochrsi.GetD())
 
+	var prevBugPrice float64
+	var prevSellPrice float64
+
 	session.MarketDataStream.OnKLineClosed(func(k types.KLine) {
 		if k.Symbol != s.Symbol {
 			return
@@ -193,31 +196,35 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 		if k.Interval == s.Interval {
 			if s.Position.GetQuantity().Float64() == 0 {
-				maxVolue := s.volumeValue.Mean()
+				maxVolue := s.volumeValue.Max()
 
 				price := cla(s.highValue, s.BreakWindow)
 
 				buySign := false
 
-				// todo 增加量能判斷
-				if price != 0 && k.Close.Float64() > price && k.Volume.Float64() > maxVolue {
+				if prevBugPrice != 0 && k.Close.Float64() > prevBugPrice {
 					buySign = true
-					fmt.Println("long price:", price)
-					fmt.Println("k:", k)
+				}
+
+				if prevBugPrice == 0 && price != 0 && k.Close.Float64() > price && k.Volume.Float64() > maxVolue {
+					prevBugPrice = k.Close.Float64()
 				}
 
 				shortPrice := claShort(s.lowValue, s.BreakWindow)
 
 				sellSign := false
 
-				if shortPrice != 0 && k.Close.Float64() < shortPrice && k.Volume.Float64() > maxVolue {
+				if prevSellPrice != 0 && k.Close.Float64() > prevSellPrice {
 					sellSign = true
-					fmt.Println("short price:", shortPrice)
-					fmt.Println("k:", k)
+				}
+
+				if prevSellPrice == 0 && shortPrice != 0 && k.Close.Float64() < shortPrice && k.Volume.Float64() > maxVolue {
+					prevSellPrice = k.Close.Float64()
 				}
 
 				// 做多
 				if buySign {
+					prevBugPrice = 0
 					buyTakeProfitPrice := k.Close.Mul(fixedpoint.One.Add(s.TakeProfit)) // 止盈價格
 					buyStopLossPrice := k.Close.Mul(fixedpoint.One.Sub(s.StopLoss))
 					buyQuantity := s.QuantityOrAmount.CalculateQuantity(k.Close)
@@ -233,16 +240,17 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 					_, _ = s.orderExecutor.SubmitOrders(ctx, buyOrder)
 
-					log.Infof("做多 數量: %v 止盈價格: %v 止損價格: %v",
+					fmt.Printf("做多 數量: %v 止盈價格: %v 止損價格: %v \n",
 						buyQuantity,
 						buyTakeProfitPrice,
 						buyStopLossPrice,
 					)
-					log.Infof("%v", k)
+					fmt.Printf("%v \n", k)
 				}
 
 				// 	// 做空
 				if sellSign {
+					prevSellPrice = 0
 					sellTakeProfitPrice := k.Close.Mul(fixedpoint.One.Sub(s.TakeProfit)) // 止盈價格
 					sellStopLossPrice := k.Close.Mul(fixedpoint.One.Add(s.StopLoss))
 					sellQuantity := s.QuantityOrAmount.CalculateQuantity(k.Close)
@@ -258,12 +266,12 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 					_, _ = s.orderExecutor.SubmitOrders(ctx, sellOrder)
 
-					log.Infof("做空 數量: %v 止盈價格: %v 止損價格: %v",
+					fmt.Printf("做空 數量: %v 止盈價格: %v 止損價格: %v \n",
 						sellQuantity,
 						sellTakeProfitPrice,
 						sellStopLossPrice,
 					)
-					log.Infof("%v", k)
+					fmt.Printf("%v \n", k)
 				}
 			}
 
@@ -295,11 +303,11 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 			if isLongPosition {
 
 				if k.Close.Float64() > s.Position.AverageCost.Mul(fixedpoint.One.Add(s.TakeProfit)).Float64() {
-					log.Infof("做多止盈 數量: %v 止盈價格: %v",
+					fmt.Printf("做多止盈 數量: %v 止盈價格: %v \n",
 						s.Position.GetQuantity(),
 						k.Close.Float64(),
 					)
-					log.Infof("%v", k)
+					fmt.Printf("%v \n", k)
 
 					sellOrder := types.SubmitOrder{
 						Symbol:   s.Symbol,
@@ -314,11 +322,11 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 				}
 
 				if k.Close.Float64() < s.Position.AverageCost.Mul(fixedpoint.One.Sub(s.StopLoss)).Float64() {
-					log.Infof("做多止損 數量: %v 止損價格: %v",
+					fmt.Printf("做多止損 數量: %v 止損價格: %v \n",
 						s.Position.GetQuantity(),
 						k.Close.Float64(),
 					)
-					log.Infof("%v", k)
+					fmt.Printf("%v \n", k)
 
 					sellOrder := types.SubmitOrder{
 						Symbol:   s.Symbol,
@@ -335,11 +343,11 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 			if isShortPosition {
 				if k.Close.Float64() < s.Position.AverageCost.Mul(fixedpoint.One.Sub(s.TakeProfit)).Float64() {
-					log.Infof("做空止盈 數量: %v 止盈價格: %v",
+					fmt.Printf("做空止盈 數量: %v 止盈價格: %v \n",
 						s.Position.GetQuantity(),
 						k.Close.Float64(),
 					)
-					log.Infof("%v", k)
+					fmt.Printf("%v \n", k)
 
 					buyOrder := types.SubmitOrder{
 						Symbol:   s.Symbol,
@@ -354,11 +362,11 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 				}
 
 				if k.Close.Float64() > s.Position.AverageCost.Mul(fixedpoint.One.Add(s.StopLoss)).Float64() {
-					log.Infof("做空止損 數量: %v 止損價格: %v",
+					fmt.Printf("做空止損 數量: %v 止損價格: %v \n",
 						s.Position.GetQuantity(),
 						k.Close.Float64(),
 					)
-					log.Infof("%v", k)
+					fmt.Printf("%v \n", k)
 
 					buyOrder := types.SubmitOrder{
 						Symbol:   s.Symbol,
@@ -397,20 +405,19 @@ func cla(vals types.Float64Slice, breakWindow int) float64 {
 
 	slopeVal := slope(float64(maxIndex), vals[maxIndex], float64(maxIndex+1+maxIndex2), vals[maxIndex+1+maxIndex2])
 
-	// expectedPrice := vals[maxIndex+1+maxIndex2] + float64(limit-maxIndex+1+maxIndex2)*slopeVal
 	// +1就是不包含自己[index+1:]
 	for k, v := range vals[maxIndex+1+maxIndex2+1:] {
 		if v > vals[maxIndex+1+maxIndex2]+float64(k+1)*slopeVal {
-			if len(vals[maxIndex+1+maxIndex2+1+k:]) <= breakWindow+10 {
+			if len(vals[maxIndex+1+maxIndex2:]) <= breakWindow+10 {
 				return 0
 			}
 
-			return cla(vals[maxIndex+1+maxIndex2+1+k:], breakWindow)
+			return cla(vals[maxIndex+1+maxIndex2:], breakWindow)
 		}
 	}
 	// fmt.Println("Long:", vals[maxIndex], vals[maxIndex+1+maxIndex2])
 
-	return vals[maxIndex+1+maxIndex2] + float64(limit-maxIndex+1+maxIndex2)*slopeVal
+	return vals[maxIndex+1+maxIndex2] + float64(limit-(maxIndex+1+maxIndex2+1))*slopeVal
 }
 
 func claShort(vals types.Float64Slice, breakWindow int) float64 {
@@ -429,20 +436,20 @@ func claShort(vals types.Float64Slice, breakWindow int) float64 {
 	}
 
 	slopeVal := slope(float64(minIndex), vals[minIndex], float64(minIndex+1+minIndex2), vals[minIndex+1+minIndex2])
-	// expectedPrice := vals[minIndex+1+minIndex2] + float64(limit-minIndex+1+minIndex2)*slopeVal
+
 	// +1就是不包含自己[index+1:]
 	for k, v := range vals[minIndex+1+minIndex2+1:] {
 		if v < vals[minIndex+1+minIndex2]+float64(k+1)*slopeVal {
-			if len(vals[minIndex+1+minIndex2+1+k:]) <= breakWindow+10 {
+			if len(vals[minIndex+1+minIndex2:]) <= breakWindow+10 {
 				return 0
 			}
 
-			return claShort(vals[minIndex+1+minIndex2+1+k:], breakWindow)
+			return claShort(vals[minIndex+1+minIndex2:], breakWindow)
 		}
 	}
 	// fmt.Println("Short:", vals[minIndex], vals[minIndex+1+minIndex2])
 
-	return vals[minIndex+1+minIndex2] + float64(limit-minIndex+1+minIndex2)*slopeVal
+	return vals[minIndex+1+minIndex2] + float64(limit-(minIndex+1+minIndex2+1))*slopeVal
 }
 
 func slope(x1, y1, x2, y2 float64) float64 {
@@ -452,10 +459,3 @@ func slope(x1, y1, x2, y2 float64) float64 {
 
 	return 0
 }
-
-// // driver code to check the above function
-// var x1 = 4;
-// var y1 = 2;
-// var x2 = 2;
-// var y2 = 5;
-// console.log("Slope is " + slope(x1, y1, x2, y2));
