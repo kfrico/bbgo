@@ -15,6 +15,9 @@ type RMA struct {
 	types.IntervalWindow
 	Values          types.Float64Slice
 	Adjust          bool
+	counter         int
+	tmp             float64
+	sum             float64
 	EndTime         time.Time
 	updateCallbacks []func(value float64)
 }

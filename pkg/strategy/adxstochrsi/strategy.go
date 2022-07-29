@@ -24,14 +24,14 @@ type Strategy struct {
 	*bbgo.Notifiability
 	*bbgo.Environment
 
-	bbgo.SmartStops
-
 	orderExecutor *bbgo.GeneralOrderExecutor
+	ExitMethods   bbgo.ExitMethodSet `json:"exits"`
 
 	bbgo.QuantityOrAmount // 單次購買數量或是金額
 
-	Session *bbgo.ExchangeSession
-	Market  types.Market
+	Session              *bbgo.ExchangeSession
+	StandardIndicatorSet *bbgo.StandardIndicatorSet
+	Market               types.Market
 
 	Position    *types.Position    `persistence:"position"`
 	ProfitStats *types.ProfitStats `persistence:"profit_stats"`
@@ -42,9 +42,6 @@ type Strategy struct {
 	UseAtrTakeProfit bool `json:"useAtrTakeProfit"`
 	UseAtrStopLoss   bool `json:"useAtrStopLoss"`
 	AtrWindow        int  `json:"atrWindow"`
-
-	TakeProfit fixedpoint.Value `json:"takeProfit,omitempty"`
-	StopLoss   fixedpoint.Value `json:"stopLoss,omitempty"`
 
 	EwmaInterval types.Interval `json:"ewmaInterval"`
 	EwmaWindow   int            `json:"ewmaWindow"`
@@ -63,10 +60,6 @@ type Strategy struct {
 	adx      *indicator.ADX
 }
 
-func (s *Strategy) Initialize() error {
-	return s.SmartStops.InitializeStopControllers(s.Symbol)
-}
-
 func (s *Strategy) ID() string {
 	return ID
 }
@@ -80,7 +73,7 @@ func (s *Strategy) Subscribe(session *bbgo.ExchangeSession) {
 	session.Subscribe(types.KLineChannel, s.Symbol, types.SubscribeOptions{Interval: s.Interval})
 	session.Subscribe(types.KLineChannel, s.Symbol, types.SubscribeOptions{Interval: s.EwmaInterval})
 
-	s.SmartStops.Subscribe(session)
+	s.ExitMethods.SetAndSubscribe(session, s)
 }
 
 func (s *Strategy) Validate() error {
@@ -130,9 +123,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		bbgo.Sync(s)
 	})
 
-	s.SmartStops.RunStopControllers(ctx, session, s.orderExecutor.TradeCollector())
-
-	s.ewma = &indicator.EWMA{IntervalWindow: types.IntervalWindow{Interval: s.EwmaInterval, Window: s.EwmaWindow}}
+	s.ExitMethods.Bind(session, s.orderExecutor)
 
 	s.dmi = &indicator.DMI{
 		IntervalWindow: types.IntervalWindow{Interval: s.Interval, Window: s.DmiWindow},
@@ -155,6 +146,13 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		return nil
 	}
 
+	// 綁定st，在初始化之後
+	s.ewma = s.StandardIndicatorSet.EWMA(types.IntervalWindow{Interval: s.EwmaInterval, Window: s.EwmaWindow})
+	// s.ewma.Bind(st)
+	s.dmi.Bind(st)
+	s.adx.Bind(st)
+	s.stochrsi.Bind(st)
+
 	// 初始化數據 指標
 	for _, k := range *klines {
 		s.dmi.PushK(k)
@@ -169,12 +167,6 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		s.ewma.PushK(k)
 	}
 
-	// 綁定st，在初始化之後
-	s.ewma.Bind(st)
-	s.dmi.Bind(st)
-	s.adx.Bind(st)
-	s.stochrsi.Bind(st)
-
 	longSignal := types.CrossOver(s.stochrsi.GetK(), s.stochrsi.GetD())
 	shortSignal := types.CrossUnder(s.stochrsi.GetK(), s.stochrsi.GetD())
 
@@ -184,90 +176,6 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		}
 
 		if s.Position.GetQuantity().Float64() != 0 {
-			isLongPosition := s.Position.IsLong()
-			isShortPosition := s.Position.IsShort()
-
-			if isLongPosition {
-
-				if k.Close.Float64() > s.Position.AverageCost.Mul(fixedpoint.One.Add(s.TakeProfit)).Float64() {
-					log.Infof("做多止盈 數量: %v 止盈價格: %v",
-						s.Position.GetQuantity(),
-						k.Close.Float64(),
-					)
-					log.Infof("%v", k)
-
-					sellOrder := types.SubmitOrder{
-						Symbol:   s.Symbol,
-						Side:     types.SideTypeSell,
-						Type:     types.OrderTypeMarket,
-						Quantity: s.Position.GetQuantity(),
-						Price:    k.Close,
-						Market:   s.Market,
-					}
-
-					_, _ = s.orderExecutor.SubmitOrders(ctx, sellOrder)
-				}
-
-				if k.Close.Float64() < s.Position.AverageCost.Mul(fixedpoint.One.Sub(s.StopLoss)).Float64() {
-					log.Infof("做多止損 數量: %v 止損價格: %v",
-						s.Position.GetQuantity(),
-						k.Close.Float64(),
-					)
-					log.Infof("%v", k)
-
-					sellOrder := types.SubmitOrder{
-						Symbol:   s.Symbol,
-						Side:     types.SideTypeSell,
-						Type:     types.OrderTypeMarket,
-						Quantity: s.Position.GetQuantity(),
-						Price:    k.Close,
-						Market:   s.Market,
-					}
-
-					_, _ = s.orderExecutor.SubmitOrders(ctx, sellOrder)
-				}
-			}
-
-			if isShortPosition {
-				if k.Close.Float64() < s.Position.AverageCost.Mul(fixedpoint.One.Sub(s.TakeProfit)).Float64() {
-					log.Infof("做空止盈 數量: %v 止盈價格: %v",
-						s.Position.GetQuantity(),
-						k.Close.Float64(),
-					)
-					log.Infof("%v", k)
-
-					buyOrder := types.SubmitOrder{
-						Symbol:   s.Symbol,
-						Side:     types.SideTypeBuy,
-						Type:     types.OrderTypeMarket,
-						Quantity: s.Position.GetQuantity(),
-						Price:    k.Close,
-						Market:   s.Market,
-					}
-
-					_, _ = s.orderExecutor.SubmitOrders(ctx, buyOrder)
-				}
-
-				if k.Close.Float64() > s.Position.AverageCost.Mul(fixedpoint.One.Add(s.StopLoss)).Float64() {
-					log.Infof("做空止損 數量: %v 止損價格: %v",
-						s.Position.GetQuantity(),
-						k.Close.Float64(),
-					)
-					log.Infof("%v", k)
-
-					buyOrder := types.SubmitOrder{
-						Symbol:   s.Symbol,
-						Side:     types.SideTypeBuy,
-						Type:     types.OrderTypeMarket,
-						Quantity: s.Position.GetQuantity(),
-						Price:    k.Close,
-						Market:   s.Market,
-					}
-
-					_, _ = s.orderExecutor.SubmitOrders(ctx, buyOrder)
-				}
-			}
-
 			return
 		}
 
@@ -291,8 +199,6 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 					srd := s.stochrsi.LastD()
 
 					if srk < 30 && srd < 25 && longSignal.Last() {
-						buyTakeProfitPrice := k.Close.Mul(fixedpoint.One.Add(s.TakeProfit)) // 止盈價格
-						buyStopLossPrice := k.Close.Mul(fixedpoint.One.Sub(s.StopLoss))
 						buyQuantity := s.QuantityOrAmount.CalculateQuantity(k.Close)
 
 						buyOrder := types.SubmitOrder{
@@ -306,10 +212,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 						_, _ = s.orderExecutor.SubmitOrders(ctx, buyOrder)
 
-						log.Infof("做多 數量: %v 止盈價格: %v 止損價格: %v",
+						log.Infof("做多 數量: %v",
 							buyQuantity,
-							buyTakeProfitPrice,
-							buyStopLossPrice,
 						)
 						log.Infof("%v", k)
 					}
@@ -321,8 +225,6 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 					srd := s.stochrsi.LastD()
 
 					if srk > 70 && srd > 75 && shortSignal.Last() {
-						sellTakeProfitPrice := k.Close.Mul(fixedpoint.One.Sub(s.TakeProfit)) // 止盈價格
-						sellStopLossPrice := k.Close.Mul(fixedpoint.One.Add(s.StopLoss))
 						sellQuantity := s.QuantityOrAmount.CalculateQuantity(k.Close)
 
 						sellOrder := types.SubmitOrder{
@@ -336,10 +238,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 						_, _ = s.orderExecutor.SubmitOrders(ctx, sellOrder)
 
-						log.Infof("做空 數量: %v 止盈價格: %v 止損價格: %v",
+						log.Infof("做空 數量: %v",
 							sellQuantity,
-							sellTakeProfitPrice,
-							sellStopLossPrice,
 						)
 						log.Infof("%v", k)
 					}

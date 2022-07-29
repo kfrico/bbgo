@@ -14,12 +14,9 @@ sessions:
 exchangeStrategies:
 - on: binance
   adxstochrsi:
-    symbol: ETCUSDT
+    symbol: ETHUSDT
     interval: 1h
     amount: 1000
-
-    takeProfit: 15%
-    stopLoss: 10%
 
     ewmaInterval: 4h
     ewmaWindow: 200
@@ -32,30 +29,32 @@ exchangeStrategies:
     stochrsiRsiWindow: 14
     stochrsiStochWindow: 14
     
-    # Set up your stop order, this is optional
-    # sometimes the stop order might decrease your total profit.
-    # you can setup multiple stop,
-    stops:
-    # use trailing stop order
-    - trailingStop:
-        # callbackRate: when the price reaches -1% from the previous highest, we trigger the stop
-        callbackRate: 5.1%
+    exits:
+    - roiTakeProfit:
+        percentage: 40%
 
-        # closePosition is how much position do you want to close
-        closePosition: 20%
+    - roiStopLoss:
+        percentage: 5%
 
-        # minProfit is how much profit you want to take.
-        # if you set this option, your stop will only be triggered above the average cost.
-        minProfit: 5%
+    - protectiveStopLoss:
+        activationRatio: 5%
+        stopLossRatio: 3%
+        placeStopOrder: false
 
-        # interval is the time interval for checking your stop
-        interval: 1m
+    - protectiveStopLoss:
+        activationRatio: 10%
+        stopLossRatio: 5%
+        placeStopOrder: false
 
-        # virtual means we don't place a a REAL stop order
-        # when virtual is on
-        # the strategy won't place a REAL stop order, instead if watches the close price,
-        # and if the condition matches, it submits a market order to close your position.
-        virtual: true
+    - protectiveStopLoss:
+        activationRatio: 20%
+        stopLossRatio: 10%
+        placeStopOrder: false
+
+    - protectiveStopLoss:
+        activationRatio: 30%
+        stopLossRatio: 15%
+        placeStopOrder: false
 sync:
   userDataStream:
     trades: true
@@ -63,16 +62,16 @@ sync:
   sessions:
     - binance
   symbols:
-    - ETCUSDT
+    - ETHUSDT
 
 backtest:
   startTime: "2022-05-01"
   endTime: "2022-07-13"
   symbols:
-    - ETCUSDT
+    - ETHUSDT
   sessions: [binance]
   accounts:
     binance:
       balances:
-        ETC: 10000
+        ETH: 10000
         USDT: 20000.0
