@@ -1,0 +1,66 @@
+---
+persistence:
+  redis:
+    host: redis
+    port: 6379
+    db: 0
+
+sessions:
+  binance:
+    exchange: binance
+    # futures: true
+    envVarPrefix: BINANCE
+
+exchangeStrategies:
+- on: binance
+  rob:
+    symbol: ETHUSDT
+    interval: 15m
+    amount: 1000
+    
+    exits:
+    - roiTakeProfit:
+        percentage: 40%
+
+    - roiStopLoss:
+        percentage: 5%
+
+    - protectiveStopLoss:
+        activationRatio: 6%
+        stopLossRatio: 3%
+        placeStopOrder: false
+
+    - protectiveStopLoss:
+        activationRatio: 10%
+        stopLossRatio: 5%
+        placeStopOrder: false
+
+    - protectiveStopLoss:
+        activationRatio: 20%
+        stopLossRatio: 10%
+        placeStopOrder: false
+
+    - protectiveStopLoss:
+        activationRatio: 30%
+        stopLossRatio: 15%
+        placeStopOrder: false
+sync:
+  userDataStream:
+    trades: true
+    filledOrders: true
+  sessions:
+    - binance
+  symbols:
+    - ETHUSDT
+
+backtest:
+  startTime: "2022-03-01"
+  endTime: "2022-07-28"
+  symbols:
+    - ETHUSDT
+  sessions: [binance]
+  accounts:
+    binance:
+      balances:
+        ETH: 10000
+        USDT: 20000.0
