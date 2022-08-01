@@ -154,6 +154,9 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		s.prevClose = k.Close.Float64()
 	}
 
+	minPrice := 0.
+	maxPrice := 0.
+
 	session.MarketDataStream.OnKLineClosed(func(k types.KLine) {
 		if k.Symbol != s.Symbol {
 			return
@@ -178,8 +181,52 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 			s.trRma.Update(max)
 			s.prevClose = k.Close.Float64()
 
-			// 有持倉就不做
 			if s.Position.GetQuantity().Float64() != 0 {
+				isLongPosition := s.Position.IsLong()
+				isShortPosition := s.Position.IsShort()
+
+				if isLongPosition {
+					if k.Close.Float64() < minPrice {
+						log.Infof("做多止損 數量: %v 止損價格: %v",
+							s.Position.GetQuantity(),
+							k.Close.Float64(),
+						)
+						log.Infof("%v", k)
+
+						sellOrder := types.SubmitOrder{
+							Symbol:   s.Symbol,
+							Side:     types.SideTypeSell,
+							Type:     types.OrderTypeMarket,
+							Quantity: s.Position.GetQuantity(),
+							Price:    k.Close,
+							Market:   s.Market,
+						}
+
+						_, _ = s.orderExecutor.SubmitOrders(ctx, sellOrder)
+					}
+				}
+
+				if isShortPosition {
+					if k.Close.Float64() > maxPrice {
+						log.Infof("做空止損 數量: %v 止損價格: %v",
+							s.Position.GetQuantity(),
+							k.Close.Float64(),
+						)
+						log.Infof("%v", k)
+
+						buyOrder := types.SubmitOrder{
+							Symbol:   s.Symbol,
+							Side:     types.SideTypeBuy,
+							Type:     types.OrderTypeMarket,
+							Quantity: s.Position.GetQuantity(),
+							Price:    k.Close,
+							Market:   s.Market,
+						}
+
+						_, _ = s.orderExecutor.SubmitOrders(ctx, buyOrder)
+					}
+				}
+
 				return
 			}
 
@@ -208,6 +255,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 				_, _ = s.orderExecutor.SubmitOrders(ctx, buyOrder)
 
+				minPrice = math.Min(math.Min(math.Min(math.Min(s.tl1Sma.Last(), s.tl2Sma.Last()), s.tl3Ema.Last()), s.ntzEma.Last()), s.ntzEma.Last()+(s.trRma.Last()*0.5))
+
 				log.Infof("做多 數量: %v",
 					buyQuantity,
 				)
@@ -235,6 +284,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 				}
 
 				_, _ = s.orderExecutor.SubmitOrders(ctx, sellOrder)
+
+				maxPrice = math.Max(math.Max(math.Max(math.Max(s.tl1Sma.Last(), s.tl2Sma.Last()), s.tl3Ema.Last()), s.ntzEma.Last()), s.ntzEma.Last()+(s.trRma.Last()*0.5))
 
 				log.Infof("做空 數量: %v",
 					sellQuantity,
