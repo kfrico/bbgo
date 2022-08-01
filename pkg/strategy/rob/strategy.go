@@ -186,6 +186,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 			long, short := rob(k)
 
 			if long &&
+				k.Close.Float64() > k.Open.Float64() &&
 				k.Low.Float64() > s.splSma.Last() &&
 				s.splSma.Last() > s.fptlEma.Last() &&
 				s.fptlEma.Last() > s.tl1Sma.Last() &&
@@ -214,6 +215,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 			}
 
 			if short &&
+				k.Open.Float64() > k.Close.Float64() &&
 				k.High.Float64() < s.splSma.Last() &&
 				s.splSma.Last() < s.fptlEma.Last() &&
 				s.fptlEma.Last() < s.tl1Sma.Last() &&
