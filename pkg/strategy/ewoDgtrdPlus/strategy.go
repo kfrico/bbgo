@@ -920,7 +920,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		}
 		bestBid := ticker.Buy
 		bestAsk := ticker.Sell
-		var midPrice fixedpoint.Value
+		// var midPrice fixedpoint.Value
 
 		if util.TryLock(&s.lock) {
 			if !bestAsk.IsZero() && !bestBid.IsZero() {
@@ -930,15 +930,15 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 			} else {
 				s.midPrice = bestBid
 			}
-			midPrice = s.midPrice
+			// midPrice = s.midPrice
 			s.lock.Unlock()
 		}
 
-		if !midPrice.IsZero() {
-			buyOrderTPSL(midPrice)
-			sellOrderTPSL(midPrice)
-			// log.Debugf("best bid %v, best ask %v, mid %v", bestBid, bestAsk, midPrice)
-		}
+		// if !midPrice.IsZero() {
+		// 	buyOrderTPSL(midPrice)
+		// 	sellOrderTPSL(midPrice)
+		// 	// log.Debugf("best bid %v, best ask %v, mid %v", bestBid, bestAsk, midPrice)
+		// }
 	})
 
 	getHigh := func(window types.KLineWindow) types.Series {
@@ -973,12 +973,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 		// well, only track prices on 1m
 		if interval == types.Interval1m {
-
-			if s.Environment.IsBackTesting() {
-				buyOrderTPSL(kline.High)
-				sellOrderTPSL(kline.Low)
-
-			}
+			buyOrderTPSL(kline.High)
+			sellOrderTPSL(kline.Low)
 		}
 
 		var lastPrice fixedpoint.Value
