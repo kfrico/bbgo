@@ -1,4 +1,4 @@
-package ewoDgtrd
+package ewoDgtrdPlus
 
 import (
 	"fmt"

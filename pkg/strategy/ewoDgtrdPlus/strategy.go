@@ -1007,8 +1007,8 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		quoteBalance := balances[s.Market.QuoteCurrency].Total()
 		atr := fixedpoint.NewFromFloat(s.atr.Last())
 		if !s.Environment.IsBackTesting() {
-			log.Infof("Get last price: %v, ewo %f, ewoSig %f, ccis: %f, atr %v, kline: %v, balance[base]: %v balance[quote]: %v",
-				lastPrice, s.ewo.Last(), s.ewoSignal.Last(), s.ccis.ma.Last(), atr, kline, baseBalance, quoteBalance)
+			log.Infof("gpl: %v, ewo %f, ewoSig %f, ccis: %f, atr %v, b[base]: %v b[quote]: %v",
+				lastPrice, s.ewo.Last(), s.ewoSignal.Last(), s.ccis.ma.Last(), atr, baseBalance, quoteBalance)
 		}
 
 		if kline.Interval != s.Interval {
@@ -1057,7 +1057,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 				// backup, since the s.sellPrice will be cleared when doing ClosePosition
 				sellPrice := s.sellPrice
-				log.Errorf("ewoChangeRate %v, emv %v", s.ewoChangeRate, s.emv.Last())
+				log.Errorf("Long ewoChangeRate %v, emv %v", s.ewoChangeRate, s.emv.Last())
 
 				// calculate report
 				if closeOrder, _ := s.PlaceBuyOrder(ctx, price); closeOrder != nil {
@@ -1091,7 +1091,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 				// backup, since the s.buyPrice will be cleared when doing ClosePosition
 				buyPrice := s.buyPrice
-				log.Errorf("ewoChangeRate: %v, emv %v", s.ewoChangeRate, s.emv.Last())
+				log.Errorf("Short ewoChangeRate: %v, emv %v", s.ewoChangeRate, s.emv.Last())
 
 				// calculate report
 				if closeOrder, _ := s.PlaceSellOrder(ctx, price); closeOrder != nil {
