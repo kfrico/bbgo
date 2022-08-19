@@ -57,8 +57,6 @@ type Strategy struct {
 	StopLoss            fixedpoint.Value `json:"stoploss"`
 	Symbol              string           `json:"symbol"`
 	Interval            types.Interval   `json:"interval"`
-	UseEma              bool             `json:"useEma"`              // use exponential ma or not
-	UseSma              bool             `json:"useSma"`              // if UseEma == false, use simple ma or not
 	SignalWindow        int              `json:"sigWin"`              // signal window
 	DisableShortStop    bool             `json:"disableShortStop"`    // disable SL on short
 	DisableLongStop     bool             `json:"disableLongStop"`     // disable SL on long
@@ -269,147 +267,65 @@ func (s *Strategy) SetupIndicators(store *bbgo.MarketDataStore) {
 			s.ccis.Update(getSource(window).Last())
 		}
 	})
-	if s.UseEma {
-		ema5 := &indicator.EWMA{IntervalWindow: window5}
-		ema34 := &indicator.EWMA{IntervalWindow: window34}
-		store.OnKLineWindowUpdate(func(interval types.Interval, window types.KLineWindow) {
-			if s.Interval != interval {
-				return
-			}
-			if ema5.Length() == 0 {
-				closes := types.Reverse(getSource(window))
-				for _, cloze := range closes {
-					ema5.Update(cloze)
-					ema34.Update(cloze)
-				}
-			} else {
-				cloze := getSource(window).Last()
-				ema5.Update(cloze)
-				ema34.Update(cloze)
-			}
 
-		})
-
-		s.ma5 = ema5
-		s.ma34 = ema34
-	} else if s.UseSma {
-		sma5 := &indicator.SMA{IntervalWindow: window5}
-		sma34 := &indicator.SMA{IntervalWindow: window34}
-		store.OnKLineWindowUpdate(func(interval types.Interval, window types.KLineWindow) {
-			if s.Interval != interval {
-				return
-			}
-			if sma5.Length() == 0 {
-				closes := types.Reverse(getSource(window))
-				for _, cloze := range closes {
-					sma5.Update(cloze)
-					sma34.Update(cloze)
-				}
-			} else {
-				cloze := getSource(window).Last()
-				sma5.Update(cloze)
-				sma34.Update(cloze)
-			}
-		})
-		s.ma5 = sma5
-		s.ma34 = sma34
-	} else {
-		evwma5 := &VWEMA{
-			PV: &indicator.EWMA{IntervalWindow: window5},
-			V:  &indicator.EWMA{IntervalWindow: window5},
+	evwma5 := &VWEMA{
+		PV: &indicator.EWMA{IntervalWindow: window5},
+		V:  &indicator.EWMA{IntervalWindow: window5},
+	}
+	evwma34 := &VWEMA{
+		PV: &indicator.EWMA{IntervalWindow: window34},
+		V:  &indicator.EWMA{IntervalWindow: window34},
+	}
+	store.OnKLineWindowUpdate(func(interval types.Interval, window types.KLineWindow) {
+		if s.Interval != interval {
+			return
 		}
-		evwma34 := &VWEMA{
-			PV: &indicator.EWMA{IntervalWindow: window34},
-			V:  &indicator.EWMA{IntervalWindow: window34},
-		}
-		store.OnKLineWindowUpdate(func(interval types.Interval, window types.KLineWindow) {
-			if s.Interval != interval {
-				return
-			}
-			clozes := getSource(window)
-			vols := getVol(window)
-			if evwma5.PV.Length() == 0 {
-				for i := clozes.Length() - 1; i >= 0; i-- {
-					price := clozes.Index(i)
-					vol := vols.Index(i)
-					evwma5.UpdateVal(price, vol)
-					evwma34.UpdateVal(price, vol)
-				}
-			} else {
-				price := clozes.Last()
-				vol := vols.Last()
+		clozes := getSource(window)
+		vols := getVol(window)
+		if evwma5.PV.Length() == 0 {
+			for i := clozes.Length() - 1; i >= 0; i-- {
+				price := clozes.Index(i)
+				vol := vols.Index(i)
 				evwma5.UpdateVal(price, vol)
 				evwma34.UpdateVal(price, vol)
 			}
-		})
-		s.ma5 = types.NewSeries(evwma5)
-		s.ma34 = types.NewSeries(evwma34)
-	}
+		} else {
+			price := clozes.Last()
+			vol := vols.Last()
+			evwma5.UpdateVal(price, vol)
+			evwma34.UpdateVal(price, vol)
+		}
+	})
+	s.ma5 = types.NewSeries(evwma5)
+	s.ma34 = types.NewSeries(evwma34)
 
 	s.ewo = s.ma5.Div(s.ma34).Minus(1.0).Mul(100.)
 	s.ewoHistogram = s.ma5.Minus(s.ma34)
 	windowSignal := types.IntervalWindow{Interval: s.Interval, Window: s.SignalWindow}
-	if s.UseEma {
-		sig := &indicator.EWMA{IntervalWindow: windowSignal}
-		store.OnKLineWindowUpdate(func(interval types.Interval, _ types.KLineWindow) {
-			if interval != s.Interval {
-				return
-			}
 
-			if sig.Length() == 0 {
-				// lazy init
-				ewoVals := types.Reverse(s.ewo)
-				for _, ewoValue := range ewoVals {
-					sig.Update(ewoValue)
-				}
-			} else {
-				sig.Update(s.ewo.Last())
-			}
-		})
-		s.ewoSignal = sig
-	} else if s.UseSma {
-		sig := &indicator.SMA{IntervalWindow: windowSignal}
-		store.OnKLineWindowUpdate(func(interval types.Interval, _ types.KLineWindow) {
-			if interval != s.Interval {
-				return
-			}
-
-			if sig.Length() == 0 {
-				// lazy init
-				ewoVals := s.ewo.Reverse()
-				for _, ewoValue := range ewoVals {
-					sig.Update(ewoValue)
-				}
-			} else {
-				sig.Update(s.ewo.Last())
-			}
-		})
-		s.ewoSignal = sig
-	} else {
-		sig := &VWEMA{
-			PV: &indicator.EWMA{IntervalWindow: windowSignal},
-			V:  &indicator.EWMA{IntervalWindow: windowSignal},
+	sig := &VWEMA{
+		PV: &indicator.EWMA{IntervalWindow: windowSignal},
+		V:  &indicator.EWMA{IntervalWindow: windowSignal},
+	}
+	store.OnKLineWindowUpdate(func(interval types.Interval, window types.KLineWindow) {
+		if interval != s.Interval {
+			return
 		}
-		store.OnKLineWindowUpdate(func(interval types.Interval, window types.KLineWindow) {
-			if interval != s.Interval {
-				return
-			}
-			if sig.Length() == 0 {
-				// lazy init
-				ewoVals := s.ewo.Reverse()
-				for i, ewoValue := range ewoVals {
-					vol := window.Volume().Index(i)
-					sig.PV.Update(ewoValue * vol)
-					sig.V.Update(vol)
-				}
-			} else {
-				vol := window.Volume().Last()
-				sig.PV.Update(s.ewo.Last() * vol)
+		if sig.Length() == 0 {
+			// lazy init
+			ewoVals := s.ewo.Reverse()
+			for i, ewoValue := range ewoVals {
+				vol := window.Volume().Index(i)
+				sig.PV.Update(ewoValue * vol)
 				sig.V.Update(vol)
 			}
-		})
-		s.ewoSignal = types.NewSeries(sig)
-	}
+		} else {
+			vol := window.Volume().Last()
+			sig.PV.Update(s.ewo.Last() * vol)
+			sig.V.Update(vol)
+		}
+	})
+	s.ewoSignal = types.NewSeries(sig)
 }
 
 // Utility to evaluate if the order is valid or not to send to the exchange
@@ -1238,12 +1154,6 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		hiblue(os.Stderr, "WinRate: %f\n", float64(totalTP)/float64(totalTP+totalSL))
 
 		maString := "vwema"
-		if s.UseSma {
-			maString = "sma"
-		}
-		if s.UseEma {
-			maString = "ema"
-		}
 
 		hiyellow(os.Stderr, "----- EWO Settings -------\n")
 		hiyellow(os.Stderr, "General:\n")
