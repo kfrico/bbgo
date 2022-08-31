@@ -1,0 +1,29 @@
+---
+persistence:
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    db: 3
+
+sessions:
+  ftx:
+    exchange: ftx
+    futures: false
+    envVarPrefix: ftx
+
+exchangeStrategies:
+
+- on: ftx
+  webhook:
+    symbol: ETHUSD
+    interval: 1m
+    amount: 1000
+    
+sync:
+  userDataStream:
+    trades: true
+    filledOrders: true
+  sessions:
+    - ftx
+  symbols:
+    - ETHUSD
