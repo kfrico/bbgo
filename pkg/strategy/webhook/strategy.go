@@ -158,12 +158,13 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 		}
 
 		if k.Interval == s.Interval {
-			log.Infof("start time: %s open: %v high: %v low: %v close: %v",
+			log.Infof("st: %s o: %v h: %v l: %v c: %v qty: %v ",
 				k.StartTime.String(),
 				k.Open,
 				k.High,
 				k.Low,
 				k.Close,
+				s.Position.GetQuantity(),
 			)
 		}
 	})
