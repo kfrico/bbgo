@@ -37,6 +37,9 @@ type Strategy struct {
 	Position    *types.Position    `persistence:"position"`
 	ProfitStats *types.ProfitStats `persistence:"profit_stats"`
 
+	EnableShort bool   `json:"enable_short"`
+	Port        string `json:"port"`
+
 	Symbol   string         `json:"symbol"`
 	Interval types.Interval `json:"interval"`
 }
@@ -139,7 +142,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 	s.orderExecutor.Bind()
 
 	s.orderExecutor.TradeCollector().OnPositionUpdate(func(position *types.Position) {
-		bbgo.Sync(s)
+		bbgo.Sync(ctx, s)
 	})
 
 	s.ExitMethods.Bind(session, s.orderExecutor)
@@ -149,7 +152,7 @@ func (s *Strategy) Run(ctx context.Context, orderExecutor bbgo.OrderExecutor, se
 
 		e.POST("/order/:coin", s.webhook)
 
-		e.Logger.Fatal(e.Start(":8168"))
+		e.Logger.Fatal(e.Start(s.Port))
 	}()
 
 	session.MarketDataStream.OnKLineClosed(func(k types.KLine) {

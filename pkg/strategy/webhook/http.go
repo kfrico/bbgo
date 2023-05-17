@@ -23,6 +23,10 @@ func (s *Strategy) webhook(c echo.Context) (err error) {
 
 	coin := c.Param("coin")
 
+	if s.Symbol != coin {
+		return c.JSON(http.StatusOK, "ok")
+	}
+
 	if n.Symbol == "" {
 		n.Symbol = coin
 	}
@@ -31,20 +35,16 @@ func (s *Strategy) webhook(c echo.Context) (err error) {
 
 	ms := strings.Split(n.Message, "|")
 
-	if len(ms) != 4 {
+	if len(ms) != 5 {
 		return c.JSON(http.StatusOK, "ok")
 	}
 
 	log.Infof("webhook message %v", ms)
 
-	if s.Symbol != ms[1] {
-		return c.JSON(http.StatusOK, "ok")
-	}
-
 	price, _ := s.Session.LastPrice(s.Symbol)
 
-	switch ms[2] {
-	case "Long":
+	switch ms[3] {
+	case "方向: Long":
 		s.CloseShortPosition(context.Background(), price)
 
 		buyQuantity := s.QuantityOrAmount.CalculateQuantity(price)
@@ -58,35 +58,53 @@ func (s *Strategy) webhook(c echo.Context) (err error) {
 			Market:   s.Market,
 		}
 
-		_, _ = s.orderExecutor.SubmitOrders(context.Background(), buyOrder)
+		_, err = s.orderExecutor.SubmitOrders(context.Background(), buyOrder)
+
+		if err != nil {
+			log.Errorf("做多 數量: %v 價格: %v Error: %v",
+				buyQuantity,
+				price,
+				err,
+			)
+		}
 
 		log.Infof("做多 數量: %v 價格: %v",
 			buyQuantity,
 			price,
 		)
-	case "LongStop":
+	case "方向: LongStop":
 		s.CloseLongPosition(context.Background(), price)
-	case "Short":
+	case "方向: Short":
 		s.CloseLongPosition(context.Background(), price)
 
-		sellQuantity := s.QuantityOrAmount.CalculateQuantity(price)
+		if s.EnableShort {
+			sellQuantity := s.QuantityOrAmount.CalculateQuantity(price)
 
-		sellOrder := types.SubmitOrder{
-			Symbol:   s.Symbol,
-			Side:     types.SideTypeSell,
-			Type:     types.OrderTypeMarket,
-			Quantity: sellQuantity,
-			Price:    price,
-			Market:   s.Market,
+			sellOrder := types.SubmitOrder{
+				Symbol:   s.Symbol,
+				Side:     types.SideTypeSell,
+				Type:     types.OrderTypeMarket,
+				Quantity: sellQuantity,
+				Price:    price,
+				Market:   s.Market,
+			}
+
+			_, err = s.orderExecutor.SubmitOrders(context.Background(), sellOrder)
+
+			if err != nil {
+				log.Errorf("做空 數量: %v 價格: %v Error: %v",
+					sellQuantity,
+					price,
+					err,
+				)
+			}
+
+			log.Infof("做空 數量: %v 價格: %v",
+				sellQuantity,
+				price,
+			)
 		}
-
-		_, _ = s.orderExecutor.SubmitOrders(context.Background(), sellOrder)
-
-		log.Infof("做空 數量: %v 價格: %v",
-			sellQuantity,
-			price,
-		)
-	case "ShortStop":
+	case "方向: ShortStop":
 		s.CloseShortPosition(context.Background(), price)
 	}
 
